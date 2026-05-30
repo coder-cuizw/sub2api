@@ -136,3 +136,6 @@ docs/*
 frontend/coverage/
 aicodex
 output/
+
+# 本地运行时数据（自动安装生成的配置、密钥、安装锁等，禁止提交）
+.run/
