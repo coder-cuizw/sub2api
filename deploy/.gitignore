@@ -10,6 +10,12 @@ redis_data/
 # Environment configuration (contains sensitive information)
 .env
 
+# Real frpc config (contains auth token) - use frp/frpc.toml.example as template
+frp/frpc.toml
+
+# Local-only docker compose override (sandbox ulimit workaround)
+docker-compose.override-ulimit.yml
+
 # Backup files
 *.backup
 *.bak

@@ -1,0 +1,26 @@
+# =============================================================================
+# Sub2API frpc 客户端配置示例
+# 用途：把本地 sub2api(8080) 通过 frp 穿透到公网 frps，远程端口与本地一致(8080)
+# 用法：
+#   1. cp frpc.toml.example frpc.toml
+#   2. 填入真实的 auth.token（请勿提交到仓库）
+#   3. frpc -c frpc.toml
+# =============================================================================
+
+serverAddr = "46.38.157.108"
+serverPort = 443
+
+auth.method = "token"
+auth.token = "<在此填入 frps 的 token>"
+
+# 连接稳健性
+transport.heartbeatInterval = 30
+transport.heartbeatTimeout  = 90
+
+# 把本地 8080 映射到公网 8080（本地端口与远程端口一致）
+[[proxies]]
+name      = "sub2api-http"
+type      = "tcp"
+localIP   = "127.0.0.1"
+localPort = 8080
+remotePort = 8080
