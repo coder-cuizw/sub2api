@@ -581,6 +581,19 @@ type SecurityConfig struct {
 	ProxyProbe                       ProxyProbeConfig     `mapstructure:"proxy_probe"`
 	TrustForwardedIPForAPIKeyACL     bool                 `mapstructure:"trust_forwarded_ip_for_api_key_acl"`
 	trustForwardedIPForAPIKeyACLLive *atomic.Bool         `mapstructure:"-"`
+	// EncryptAccountCredentials 开启后，账号上游凭证（access_token / refresh_token /
+	// api_key / service_account_json 等）写入 DB 前会用 AES-256-GCM 加密（复用 TOTP 密钥）。
+	// 读取始终向后兼容明文与历史密文。仅当 totp.encryption_key 为持久配置的固定密钥时生效，
+	// 否则（自动生成的临时密钥）会被忽略并告警，避免重启后无法解密。默认关闭。
+	EncryptAccountCredentials bool `mapstructure:"encrypt_account_credentials"`
+}
+
+// EncryptAccountCredentials 返回是否对账号上游凭证启用静态加密。
+func (c *Config) EncryptAccountCredentials() bool {
+	if c == nil {
+		return false
+	}
+	return c.Security.EncryptAccountCredentials
 }
 
 func (c *Config) TrustForwardedIPForAPIKeyACL() bool {
