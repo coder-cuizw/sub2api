@@ -83,6 +83,14 @@ cors:
 # 安全配置
 # =============================================================================
 security:
+  # Encrypt upstream account credentials (access_token / refresh_token / api_key /
+  # service_account_json ...) at rest in the DB using AES-256-GCM (reuses totp.encryption_key).
+  # Reads always stay backward-compatible with existing plaintext and encrypted values.
+  # Only takes effect when totp.encryption_key is a persistently configured fixed key
+  # (an auto-generated ephemeral key is refused to avoid data loss on restart). Default false.
+  # 对账号上游凭证启用静态加密（复用 totp.encryption_key）。读取始终向后兼容明文/历史密文。
+  # 仅当 totp.encryption_key 为持久固定密钥时生效，否则忽略并告警。默认 false。
+  encrypt_account_credentials: false
   url_allowlist:
     # Enable URL allowlist validation (disable to skip all URL checks)
     # 启用 URL 白名单验证（禁用则跳过所有 URL 检查）
