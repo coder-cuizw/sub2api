@@ -78,6 +78,7 @@ func TestDialerAgainstCaptureServer(t *testing.T) {
 		},
 		{
 			// 采集自 sub2api 运行环境：Linux x64 / Node.js v22.22.2（OpenSSL 3.5.5）。
+			// 已用真实 @anthropic-ai/sdk（Claude Code 实际 HTTP 栈）抓取 ClientHello 逐字段比对一致。
 			// 与 v22.17.1 不同，OpenSSL 3.5 默认启用后量子组 X25519MLKEM768(4588)，
 			// 它同时出现在 supported_groups 与 key_share 首位；签名算法新增 ML-DSA(0x0904/0905/0906)。
 			name: "linux_x64_node_v22222",
