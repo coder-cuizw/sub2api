@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"time"
@@ -25,6 +26,7 @@ import (
 	dbgroup "github.com/Wei-Shaw/sub2api/ent/group"
 	dbpredicate "github.com/Wei-Shaw/sub2api/ent/predicate"
 	dbproxy "github.com/Wei-Shaw/sub2api/ent/proxy"
+	"github.com/Wei-Shaw/sub2api/internal/config"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/logger"
 	"github.com/Wei-Shaw/sub2api/internal/pkg/pagination"
 	"github.com/Wei-Shaw/sub2api/internal/service"
@@ -66,7 +68,22 @@ var schedulerNeutralExtraKeys = map[string]struct{}{
 
 // NewAccountRepository 创建账户仓储实例。
 // 这是对外暴露的构造函数，返回接口类型以便于依赖注入。
-func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache) service.AccountRepository {
+//
+// encryptor / cfg 用于配置账号凭证的可选静态加密（默认关闭）。仅当显式开启
+// security.encrypt_account_credentials 且 totp.encryption_key 为持久配置的固定密钥时，
+// 才启用写加密——否则忽略并告警，避免用自动生成的临时密钥加密导致重启后无法解密。
+// 无论写加密是否开启，只要 encryptor 非空，读路径都会向后兼容地解密历史密文。
+func NewAccountRepository(client *dbent.Client, sqlDB *sql.DB, schedulerCache service.SchedulerCache, encryptor service.SecretEncryptor, cfg *config.Config) service.AccountRepository {
+	encryptOnWrite := false
+	if cfg != nil && cfg.EncryptAccountCredentials() {
+		if cfg.Totp.EncryptionKeyConfigured {
+			encryptOnWrite = true
+		} else {
+			slog.Warn("account_credentials_encryption_ignored",
+				"reason", "totp.encryption_key not configured (auto-generated key is ephemeral); refusing to encrypt to avoid data loss on restart")
+		}
+	}
+	ConfigureCredentialCipher(encryptor, encryptOnWrite)
 	return newAccountRepositoryWithSQL(client, sqlDB, schedulerCache)
 }
 
@@ -86,7 +103,7 @@ func (r *accountRepository) Create(ctx context.Context, account *service.Account
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
 		SetType(account.Type).
-		SetCredentials(normalizeJSONMap(account.Credentials)).
+		SetCredentials(encryptCredentialsForStorage(normalizeJSONMap(account.Credentials))).
 		SetExtra(normalizeJSONMap(account.Extra)).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
@@ -327,7 +344,7 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 		SetNillableNotes(account.Notes).
 		SetPlatform(account.Platform).
 		SetType(account.Type).
-		SetCredentials(normalizeJSONMap(account.Credentials)).
+		SetCredentials(encryptCredentialsForStorage(normalizeJSONMap(account.Credentials))).
 		SetExtra(normalizeJSONMap(account.Extra)).
 		SetConcurrency(account.Concurrency).
 		SetPriority(account.Priority).
@@ -410,7 +427,7 @@ func (r *accountRepository) Update(ctx context.Context, account *service.Account
 
 func (r *accountRepository) UpdateCredentials(ctx context.Context, id int64, credentials map[string]any) error {
 	_, err := r.client.Account.UpdateOneID(id).
-		SetCredentials(normalizeJSONMap(credentials)).
+		SetCredentials(encryptCredentialsForStorage(normalizeJSONMap(credentials))).
 		Save(ctx)
 	if err != nil {
 		return translatePersistenceError(err, service.ErrAccountNotFound, nil)
@@ -1460,8 +1477,9 @@ func (r *accountRepository) BulkUpdate(ctx context.Context, ids []int64, updates
 		idx++
 	}
 	// JSONB 需要合并而非覆盖，使用 raw SQL 保持旧行为。
+	// 加密在键级进行，`||` 合并仍按键合并，密文/明文可共存。
 	if len(updates.Credentials) > 0 {
-		payload, err := json.Marshal(updates.Credentials)
+		payload, err := json.Marshal(encryptCredentialsForStorage(updates.Credentials))
 		if err != nil {
 			return 0, err
 		}
@@ -1775,7 +1793,7 @@ func accountEntityToService(m *dbent.Account) *service.Account {
 		Notes:                   m.Notes,
 		Platform:                m.Platform,
 		Type:                    m.Type,
-		Credentials:             copyJSONMap(m.Credentials),
+		Credentials:             decryptCredentialsFromStorage(copyJSONMap(m.Credentials)),
 		Extra:                   copyJSONMap(m.Extra),
 		ProxyID:                 m.ProxyID,
 		ProxyFallbackOriginID:   m.ProxyFallbackOriginID,
