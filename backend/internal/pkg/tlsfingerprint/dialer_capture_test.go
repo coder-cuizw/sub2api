@@ -77,6 +77,26 @@ func TestDialerAgainstCaptureServer(t *testing.T) {
 			},
 		},
 		{
+			// 采集自 sub2api 运行环境：Linux x64 / Node.js v22.22.2（OpenSSL 3.5.5）。
+			// 已用真实 @anthropic-ai/sdk（Claude Code 实际 HTTP 栈）抓取 ClientHello 逐字段比对一致。
+			// 与 v22.17.1 不同，OpenSSL 3.5 默认启用后量子组 X25519MLKEM768(4588)，
+			// 它同时出现在 supported_groups 与 key_share 首位；签名算法新增 ML-DSA(0x0904/0905/0906)。
+			name: "linux_x64_node_v22222",
+			profile: &Profile{
+				Name:                "linux_x64_node_v22222",
+				EnableGREASE:        false,
+				CipherSuites:        []uint16{4866, 4867, 4865, 49199, 49195, 49200, 49196, 158, 49191, 103, 49192, 107, 163, 159, 52393, 52392, 52394, 49325, 49311, 49245, 49249, 49239, 49235, 162, 49324, 49310, 49244, 49248, 49238, 49234, 49188, 106, 49187, 64, 49162, 49172, 57, 56, 49161, 49171, 51, 50, 157, 49309, 49233, 156, 49308, 49232, 61, 60, 53, 47},
+				Curves:              []uint16{4588, 29, 23, 30, 24, 25, 256, 257},
+				PointFormats:        []uint16{0, 1, 2},
+				SignatureAlgorithms: []uint16{0x0905, 0x0906, 0x0904, 0x0403, 0x0503, 0x0603, 0x0807, 0x0808, 0x081a, 0x081b, 0x081c, 0x0809, 0x080a, 0x080b, 0x0804, 0x0805, 0x0806, 0x0401, 0x0501, 0x0601, 0x0303, 0x0301, 0x0302, 0x0402, 0x0502, 0x0602},
+				ALPNProtocols:       []string{"http/1.1"},
+				SupportedVersions:   []uint16{0x0304, 0x0303},
+				KeyShareGroups:      []uint16{4588, 29},
+				PSKModes:            []uint16{1},
+				Extensions:          []uint16{65281, 0, 11, 10, 35, 16, 22, 23, 13, 43, 45, 51},
+			},
+		},
+		{
 			name: "macos_arm64_node_v2430",
 			profile: &Profile{
 				Name:                "MacOS_arm64_node_v2430",
