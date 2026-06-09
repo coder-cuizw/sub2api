@@ -62,6 +62,12 @@ func ProvideSchedulerCache(rdb *redis.Client, cfg *config.Config) service.Schedu
 	return newSchedulerCacheWithChunkSizes(rdb, mgetChunkSize, writeChunkSize)
 }
 
+// ProvideAccountCooldownCache 创建账号冷却期缓存
+// 用于管理 OAuth 账号被限流后的冷却状态
+func ProvideAccountCooldownCache(rdb *redis.Client) service.AccountCooldownCache {
+	return NewAccountCooldownCache(rdb)
+}
+
 // ProviderSet is the Wire provider set for all repositories
 var ProviderSet = wire.NewSet(
 	NewUserRepository,
@@ -117,6 +123,7 @@ var ProviderSet = wire.NewSet(
 	NewGeminiTokenCache,
 	NewLeaderLockCache,
 	ProvideSchedulerCache,
+	ProvideAccountCooldownCache,
 	NewSchedulerOutboxRepository,
 	NewProxyLatencyCache,
 	NewTotpCache,
