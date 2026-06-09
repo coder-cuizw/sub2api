@@ -16,11 +16,11 @@ services:
   # Sub2API Application
   # ===========================================================================
   sub2api:
-    image: ${SUB2API_IMAGE:-46.38.157.108:80/sub2api:latest}
+    image: ${SUB2API_IMAGE:-sub2api:latest}
     container_name: sub2api
     restart: unless-stopped
     pull_policy: never
-    # 注意: pull_policy: never 确保 docker-compose 使用本地已构建的镜像，不尝试拉取
+    # 注意: pull_policy: never 确保 docker-compose 使用本地已构建的镜像
     ulimits:
       nofile:
         soft: 100000
