@@ -112,6 +112,9 @@ backend/config.yaml
 deploy/config.yaml
 backend/.installed
 
+# 构建时注入的自定义 CA 证书（deploy-production.sh 自动收集）
+build-certs/*.crt
+
 # ===================
 # 其他
 # ===================

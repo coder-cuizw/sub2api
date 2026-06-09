@@ -20,6 +20,15 @@ FROM ${NODE_IMAGE} AS frontend-builder
 
 WORKDIR /app/frontend
 
+# Optional: trust extra CA certificates (corporate / TLS-inspection proxies).
+# Drop .crt files into build-certs/ at the repo root; the directory ships empty
+# so default builds are unaffected.
+COPY build-certs/ /usr/local/share/ca-certificates/
+RUN if ls /usr/local/share/ca-certificates/*.crt >/dev/null 2>&1; then \
+        for f in /usr/local/share/ca-certificates/*.crt; do cat "$f"; echo; done >> /etc/ssl/certs/ca-certificates.crt; \
+    fi
+ENV NODE_EXTRA_CA_CERTS=/etc/ssl/certs/ca-certificates.crt
+
 # Install pnpm (pinned to v9 to match CI and keep builds reproducible)
 RUN corepack enable && corepack prepare pnpm@9 --activate
 
@@ -45,6 +54,12 @@ ARG GOSUMDB
 
 ENV GOPROXY=${GOPROXY}
 ENV GOSUMDB=${GOSUMDB}
+
+# Optional: trust extra CA certificates (corporate / TLS-inspection proxies).
+COPY build-certs/ /usr/local/share/ca-certificates/
+RUN if ls /usr/local/share/ca-certificates/*.crt >/dev/null 2>&1; then \
+        for f in /usr/local/share/ca-certificates/*.crt; do cat "$f"; echo; done >> /etc/ssl/certs/ca-certificates.crt; \
+    fi
 
 # Install build dependencies
 RUN apk add --no-cache git ca-certificates tzdata
@@ -87,6 +102,13 @@ FROM ${ALPINE_IMAGE}
 LABEL maintainer="Wei-Shaw <github.com/Wei-Shaw>"
 LABEL description="Sub2API - AI API Gateway Platform"
 LABEL org.opencontainers.image.source="https://github.com/Wei-Shaw/sub2api"
+
+# Optional: trust extra CA certificates (corporate / TLS-inspection proxies).
+# Also needed at runtime when outbound traffic goes through such a proxy.
+COPY build-certs/ /usr/local/share/ca-certificates/
+RUN if ls /usr/local/share/ca-certificates/*.crt >/dev/null 2>&1; then \
+        for f in /usr/local/share/ca-certificates/*.crt; do cat "$f"; echo; done >> /etc/ssl/certs/ca-certificates.crt; \
+    fi
 
 # Install runtime dependencies
 RUN apk add --no-cache \

@@ -240,6 +240,15 @@ build_docker_image() {
     echo -e "  最新: ${IMAGE_LATEST}"
     echo ""
 
+    # 企业代理/TLS 拦截环境：收集宿主自定义 CA，供构建阶段和运行时信任
+    mkdir -p build-certs
+    rm -f build-certs/*.crt
+    if ls /usr/local/share/ca-certificates/*.crt >/dev/null 2>&1; then
+        cp /usr/local/share/ca-certificates/*.crt build-certs/
+        echo -e "${YELLOW}检测到宿主自定义 CA 证书，已复制到 build-certs/ 注入构建${NC}"
+        echo ""
+    fi
+
     echo -e "${BLUE}从源代码构建本地镜像...${NC}"
     if docker build \
         --no-cache \
