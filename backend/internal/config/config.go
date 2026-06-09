@@ -93,6 +93,7 @@ type Config struct {
 	Gemini                  GeminiConfig                  `mapstructure:"gemini"`
 	Update                  UpdateConfig                  `mapstructure:"update"`
 	Idempotency             IdempotencyConfig             `mapstructure:"idempotency"`
+	TrafficModulation       TrafficModulationConfig       `mapstructure:"traffic_modulation"`
 }
 
 type LogConfig struct {
@@ -2974,4 +2975,15 @@ func warnIfInsecureURL(field, raw string) {
 	if strings.EqualFold(u.Scheme, "http") {
 		slog.Warn("url uses http scheme; use https in production to avoid token leakage", "field", field)
 	}
+}
+
+// TrafficModulationConfig 流量调制（用户行为随机化）配置
+// 用于模拟真实用户的活跃模式，避免 24/7 机器化操作被识别
+type TrafficModulationConfig struct {
+	// Enabled: 是否启用流量调制功能（默认关闭）
+	Enabled bool `mapstructure:"enabled"`
+	// Timezone: 时区配置，用于计算当前时间窗口
+	// 格式：IANA 时区名称，如 "America/New_York", "Asia/Shanghai"
+	// 为空时使用 UTC
+	Timezone string `mapstructure:"timezone"`
 }

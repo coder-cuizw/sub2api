@@ -242,15 +242,40 @@ func ProvideRateLimitService(
 	tempUnschedCache TempUnschedCache,
 	timeoutCounterCache TimeoutCounterCache,
 	openAI403CounterCache OpenAI403CounterCache,
+	accountCooldownCache AccountCooldownCache,
 	settingService *SettingService,
 	tokenCacheInvalidator TokenCacheInvalidator,
 ) *RateLimitService {
 	svc := NewRateLimitService(accountRepo, usageRepo, cfg, geminiQuotaService, tempUnschedCache)
 	svc.SetTimeoutCounterCache(timeoutCounterCache)
 	svc.SetOpenAI403CounterCache(openAI403CounterCache)
+	svc.SetAccountCooldownCache(accountCooldownCache)
 	svc.SetSettingService(settingService)
 	svc.SetTokenCacheInvalidator(tokenCacheInvalidator)
 	return svc
+}
+
+// ProvideTrafficModulationService 创建用户行为随机化服务
+// 用于模拟真实用户的活跃模式，避免 24/7 机器化操作被识别
+// 功能可通过配置启用/禁用
+func ProvideTrafficModulationService(cfg *config.Config) (*TrafficModulationService, error) {
+	// 从配置中读取启用状态（默认关闭）
+	enabled := false
+	tzName := ""
+	if cfg != nil {
+		enabled = cfg.TrafficModulation.Enabled
+		if cfg.TrafficModulation.Timezone != "" {
+			tzName = cfg.TrafficModulation.Timezone
+		} else if cfg.Timezone != "" {
+			// 回退到全局时区配置
+			tzName = cfg.Timezone
+		}
+	}
+
+	// 使用默认的时间窗口配置
+	timeWindows := DefaultTrafficModulationWindows()
+
+	return NewTrafficModulationService(enabled, timeWindows, tzName)
 }
 
 // ProvideOpsMetricsCollector creates and starts OpsMetricsCollector.
@@ -536,6 +561,7 @@ var ProviderSet = wire.NewSet(
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
 	ProvideRateLimitService,
+	ProvideTrafficModulationService,
 	NewAccountUsageService,
 	NewAccountTestService,
 	ProvideSettingService,

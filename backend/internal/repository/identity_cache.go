@@ -15,6 +15,8 @@ const (
 	fingerprintTTL         = 7 * 24 * time.Hour // 7天，配合每24小时懒续期可保持活跃账号永不过期
 	maskedSessionKeyPrefix = "masked_session:"
 	maskedSessionTTL       = 15 * time.Minute
+	fingerprintLockPrefix  = "fingerprint_renew_lock:"  // 用于指纹续期的分布式锁前缀
+	fingerprintLockTTL     = 10 * time.Second           // 续期锁的过期时间（足够完成续期操作）
 )
 
 // fingerprintKey generates the Redis key for account fingerprint cache.
@@ -72,4 +74,15 @@ func (c *identityCache) GetMaskedSessionID(ctx context.Context, accountID int64)
 func (c *identityCache) SetMaskedSessionID(ctx context.Context, accountID int64, sessionID string) error {
 	key := maskedSessionKey(accountID)
 	return c.rdb.Set(ctx, key, sessionID, maskedSessionTTL).Err()
+}
+
+func (c *identityCache) AcquireRenewalLock(ctx context.Context, accountID int64, lockTTL time.Duration) (bool, error) {
+	key := fmt.Sprintf("%s%d", fingerprintLockPrefix, accountID)
+	result, err := c.rdb.SetNX(ctx, key, "locked", lockTTL).Result()
+	return result, err
+}
+
+func (c *identityCache) ReleaseRenewalLock(ctx context.Context, accountID int64) error {
+	key := fmt.Sprintf("%s%d", fingerprintLockPrefix, accountID)
+	return c.rdb.Del(ctx, key).Err()
 }

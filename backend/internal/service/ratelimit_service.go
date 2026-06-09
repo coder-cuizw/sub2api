@@ -20,23 +20,30 @@ import (
 
 // RateLimitService 处理限流和过载状态管理
 type RateLimitService struct {
-	accountRepo           AccountRepository
-	usageRepo             UsageLogRepository
-	cfg                   *config.Config
-	geminiQuotaService    *GeminiQuotaService
-	tempUnschedCache      TempUnschedCache
-	timeoutCounterCache   TimeoutCounterCache
-	openAI403CounterCache OpenAI403CounterCache
-	settingService        *SettingService
-	tokenCacheInvalidator TokenCacheInvalidator
-	runtimeBlocker        AccountRuntimeBlocker
-	usageCacheMu          sync.RWMutex
-	usageCache            map[int64]*geminiUsageCacheEntry
+	accountRepo            AccountRepository
+	usageRepo              UsageLogRepository
+	cfg                    *config.Config
+	geminiQuotaService     *GeminiQuotaService
+	tempUnschedCache       TempUnschedCache
+	timeoutCounterCache    TimeoutCounterCache
+	openAI403CounterCache  OpenAI403CounterCache
+	accountCooldownCache   AccountCooldownCache
+	settingService         *SettingService
+	tokenCacheInvalidator  TokenCacheInvalidator
+	runtimeBlocker         AccountRuntimeBlocker
+	usageCacheMu           sync.RWMutex
+	usageCache             map[int64]*geminiUsageCacheEntry
 }
 
 type AccountRuntimeBlocker interface {
 	BlockAccountScheduling(account *Account, until time.Time, reason string)
 	ClearAccountSchedulingBlock(accountID int64)
+}
+
+type AccountCooldownCache interface {
+	EnterCooldown(ctx context.Context, accountID int64, duration time.Duration, reason string) error
+	IsInCooldown(ctx context.Context, accountID int64) (bool, error)
+	GetCooldown24hCount(ctx context.Context, accountID int64) (int, error)
 }
 
 // SuccessfulTestRecoveryResult 表示测试成功后恢复了哪些运行时状态。
@@ -100,6 +107,11 @@ func (s *RateLimitService) SetTimeoutCounterCache(cache TimeoutCounterCache) {
 // SetOpenAI403CounterCache 设置 OpenAI 403 连续失败计数器（可选依赖）
 func (s *RateLimitService) SetOpenAI403CounterCache(cache OpenAI403CounterCache) {
 	s.openAI403CounterCache = cache
+}
+
+// SetAccountCooldownCache 设置账号冷却期缓存（可选依赖）
+func (s *RateLimitService) SetAccountCooldownCache(cache AccountCooldownCache) {
+	s.accountCooldownCache = cache
 }
 
 // SetSettingService 设置系统设置服务（可选依赖）
@@ -881,6 +893,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 				slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
 				return
 			}
+			s.applyAccountCooldown(ctx, account, "openai_rate_limited")
 			slog.Info("openai_account_rate_limited", "account_id", account.ID, "reset_at", *resetAt)
 			return
 		}
@@ -904,6 +917,9 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 			slog.Warn("rate_limit_update_session_window_failed", "account_id", account.ID, "error", err)
 		}
 
+		// 进入账号冷却期
+		s.applyAccountCooldown(ctx, account, "anthropic_rate_limited")
+
 		slog.Info("anthropic_account_rate_limited", "account_id", account.ID, "reset_at", result.resetAt, "reset_in", time.Until(result.resetAt).Truncate(time.Second))
 		return
 	}
@@ -923,6 +939,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 					slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
 					return
 				}
+				s.applyAccountCooldown(ctx, account, "openai_rate_limited")
 				slog.Info("account_rate_limited", "account_id", account.ID, "platform", account.Platform, "reset_at", resetTime, "reset_in", time.Until(resetTime).Truncate(time.Second))
 				return
 			}
@@ -935,6 +952,7 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 					slog.Warn("rate_limit_set_failed", "account_id", account.ID, "error", err)
 					return
 				}
+				s.applyAccountCooldown(ctx, account, "platform_rate_limited")
 				slog.Info("account_rate_limited", "account_id", account.ID, "platform", account.Platform, "reset_at", resetTime, "reset_in", time.Until(resetTime).Truncate(time.Second))
 				return
 			}
@@ -978,6 +996,9 @@ func (s *RateLimitService) handle429(ctx context.Context, account *Account, head
 	if err := s.accountRepo.UpdateSessionWindow(ctx, account.ID, &windowStart, &windowEnd, "rejected"); err != nil {
 		slog.Warn("rate_limit_update_session_window_failed", "account_id", account.ID, "error", err)
 	}
+
+	// 进入账号冷却期
+	s.applyAccountCooldown(ctx, account, "anthropic_rate_limited")
 
 	slog.Info("account_rate_limited", "account_id", account.ID, "reset_at", resetAt)
 }
@@ -1342,6 +1363,33 @@ func (s *RateLimitService) handle529(ctx context.Context, account *Account) {
 	}
 
 	slog.Info("account_overloaded", "account_id", account.ID, "until", until)
+}
+
+// applyAccountCooldown 将账号设置为冷却状态，防止继续触怒上游
+// 冷却时长默认为 1 小时
+func (s *RateLimitService) applyAccountCooldown(ctx context.Context, account *Account, reason string) {
+	if account == nil || s.accountCooldownCache == nil {
+		return
+	}
+
+	cooldownDuration := 1 * time.Hour
+	if err := s.accountCooldownCache.EnterCooldown(ctx, account.ID, cooldownDuration, reason); err != nil {
+		slog.Warn("account_cooldown_entry_failed", "account_id", account.ID, "reason", reason, "error", err)
+		return
+	}
+
+	count, err := s.accountCooldownCache.GetCooldown24hCount(ctx, account.ID)
+	if err != nil {
+		slog.Warn("account_cooldown_count_read_failed", "account_id", account.ID, "error", err)
+		return
+	}
+
+	slog.Info("account_entered_cooldown", "account_id", account.ID, "reason", reason, "duration", cooldownDuration.String(), "cooldown_count_24h", count)
+
+	// 如果 24 小时内多次冷却，发出告警
+	if count >= 3 {
+		slog.Warn("account_multiple_cooldowns_24h", "account_id", account.ID, "cooldown_count", count)
+	}
 }
 
 // UpdateSessionWindow 从成功响应更新5h窗口状态
