@@ -92,8 +92,8 @@ create_env_file() {
 # Docker Image Configuration
 # =============================================================================
 # SUB2API_IMAGE: Sub2API application image
-# 镜像从源代码自动构建，无需手动拉取
-SUB2API_IMAGE=46.38.157.108:80/sub2api:latest
+# 镜像从源代码本地构建，无需推送到远程仓库
+SUB2API_IMAGE=sub2api:latest
 
 # =============================================================================
 # Server Configuration
@@ -213,15 +213,15 @@ build_docker_image() {
     # 获取版本号和提交哈希
     VERSION=$(cat backend/cmd/server/VERSION | tr -d '\n' 2>/dev/null || echo "latest")
     COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
-    IMAGE_TAG="46.38.157.108:80/sub2api:v${VERSION}-${COMMIT}"
-    IMAGE_LATEST="46.38.157.108:80/sub2api:latest"
+    IMAGE_TAG="sub2api:v${VERSION}-${COMMIT}"
+    IMAGE_LATEST="sub2api:latest"
 
-    echo -e "${YELLOW}镜像标签:${NC}"
+    echo -e "${YELLOW}本地镜像标签:${NC}"
     echo -e "  版本: ${IMAGE_TAG}"
     echo -e "  最新: ${IMAGE_LATEST}"
     echo ""
 
-    echo -e "${BLUE}执行 docker build...${NC}"
+    echo -e "${BLUE}从源代码构建本地镜像...${NC}"
     if docker build \
         -t "$IMAGE_TAG" \
         -t "$IMAGE_LATEST" \
