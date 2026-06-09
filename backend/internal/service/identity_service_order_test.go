@@ -4,12 +4,20 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 )
 
 type identityCacheStub struct {
 	maskedSessionID string
+}
+
+func (s *identityCacheStub) AcquireRenewalLock(_ context.Context, _ int64, _ time.Duration) (bool, error) {
+	return true, nil
+}
+func (s *identityCacheStub) ReleaseRenewalLock(_ context.Context, _ int64) error {
+	return nil
 }
 
 func (s *identityCacheStub) GetFingerprint(_ context.Context, _ int64) (*Fingerprint, error) {
