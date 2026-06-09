@@ -54,6 +54,12 @@ type Fingerprint struct {
 type IdentityCache interface {
 	GetFingerprint(ctx context.Context, accountID int64) (*Fingerprint, error)
 	SetFingerprint(ctx context.Context, accountID int64, fp *Fingerprint) error
+	// AcquireRenewalLock 尝试获取指纹续期的分布式锁，防止并发续期导致 ClientID 振荡
+	// 返回值：acquired（是否成功获取）, error
+	// 注意：获取成功后必须调用 ReleaseRenewalLock 释放锁，建议使用 defer
+	AcquireRenewalLock(ctx context.Context, accountID int64, lockTTL time.Duration) (bool, error)
+	// ReleaseRenewalLock 释放指纹续期锁
+	ReleaseRenewalLock(ctx context.Context, accountID int64) error
 	// GetMaskedSessionID 获取固定的会话ID（用于会话ID伪装功能）
 	// 返回的 sessionID 是一个 UUID 格式的字符串
 	// 如果不存在或已过期（15分钟无请求），返回空字符串
@@ -76,6 +82,11 @@ func NewIdentityService(cache IdentityCache) *IdentityService {
 // GetOrCreateFingerprint 获取或创建账号的指纹
 // 如果缓存存在，检测user-agent版本，新版本则更新
 // 如果缓存不存在，生成随机ClientID并从请求头创建指纹，然后缓存
+//
+// 关键：使用分布式锁防止指纹续期时的并发冲突
+// 问题场景：多个并发请求同时触发 TTL 续期，导致生成多个不同的 ClientID
+// 影响：device_id 在毫秒内变化，被 Anthropic 识别为异常 → 账号被标记
+// 修复：确保同时只有一个请求进行续期，其他请求等待并读取续期后的值
 func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID int64, headers http.Header) (*Fingerprint, error) {
 	// 尝试从缓存获取指纹
 	cached, err := s.cache.GetFingerprint(ctx, accountID)
@@ -91,7 +102,43 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 			needWrite = true
 			logger.LegacyPrintf("service.identity", "Updated fingerprint for account %d: %s (merge update)", accountID, clientUA)
 		} else if time.Since(time.Unix(cached.UpdatedAt, 0)) > 24*time.Hour {
-			// 距上次写入超过24小时，续期TTL
+			// 距上次写入超过24小时，需要续期 TTL
+			// 关键：使用分布式锁，确保同时只有一个请求进行续期
+			// 这防止了并发续期导致的 ClientID 振荡问题
+			acquired, lockErr := s.cache.AcquireRenewalLock(ctx, accountID, 10*time.Second)
+			if !acquired {
+				// 其他请求正在续期，等待并读取续期后的值
+				if lockErr == nil {
+					// 锁获取失败但无错误，说明有其他请求在续期
+					// 等待一小段时间让续期完成，最多等待 500ms
+					for i := 0; i < 5; i++ {
+						time.Sleep(100 * time.Millisecond)
+						// 重新读取缓存中的指纹（应该已被更新）
+						refreshed, getErr := s.cache.GetFingerprint(ctx, accountID)
+						if getErr == nil && refreshed != nil && time.Since(time.Unix(refreshed.UpdatedAt, 0)) < 24*time.Hour {
+							// 确认已被续期，返回新值
+							return refreshed, nil
+						}
+					}
+				}
+				// 如果重新获取失败或超时，仍然使用当前缓存的指纹（降级处理）
+				return cached, nil
+			}
+			// 成功获取了续期锁，执行续期
+			defer func() {
+				releaseErr := s.cache.ReleaseRenewalLock(ctx, accountID)
+				if releaseErr != nil {
+					logger.LegacyPrintf("service.identity", "Warning: failed to release renewal lock for account %d: %v", accountID, releaseErr)
+				}
+			}()
+
+			// 再次检查缓存是否已被其他请求续期（双重检查，处理竞态条件）
+			rechecked, reErr := s.cache.GetFingerprint(ctx, accountID)
+			if reErr == nil && rechecked != nil && time.Since(time.Unix(rechecked.UpdatedAt, 0)) < 24*time.Hour {
+				// 已被续期，直接返回
+				return rechecked, nil
+			}
+
 			needWrite = true
 		}
 
@@ -119,7 +166,6 @@ func (s *IdentityService) GetOrCreateFingerprint(ctx context.Context, accountID 
 	logger.LegacyPrintf("service.identity", "Created new fingerprint for account %d with client_id: %s", accountID, fp.ClientID)
 	return fp, nil
 }
-
 // createFingerprintFromHeaders 从请求头创建指纹
 func (s *IdentityService) createFingerprintFromHeaders(headers http.Header) *Fingerprint {
 	fp := &Fingerprint{}
