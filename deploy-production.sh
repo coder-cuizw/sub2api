@@ -26,8 +26,9 @@ NC='\033[0m' # No Color
 
 # 脚本配置
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ENV_FILE="${SCRIPT_DIR}/.env"
-DOCKER_COMPOSE_FILE="${SCRIPT_DIR}/docker-compose.yml"
+DEPLOY_DIR="${SCRIPT_DIR}/deploy"
+ENV_FILE="${DEPLOY_DIR}/.env"
+DOCKER_COMPOSE_FILE="${DEPLOY_DIR}/docker-compose.yml"
 
 # 检查依赖
 check_dependencies() {
@@ -200,7 +201,7 @@ start_docker_compose() {
     echo -e "${BLUE}启动 Docker Compose 服务...${NC}"
     echo ""
 
-    cd "$SCRIPT_DIR"
+    cd "$DEPLOY_DIR"
 
     # 检查 .env 文件是否存在
     if [ ! -f "$ENV_FILE" ]; then
@@ -210,9 +211,9 @@ start_docker_compose() {
 
     # 启动服务
     if command -v docker-compose &> /dev/null; then
-        docker-compose -f docker-compose.yml up -d
+        docker-compose up -d
     else
-        docker compose -f docker-compose.yml up -d
+        docker compose up -d
     fi
 
     echo -e "${GREEN}✓ Docker Compose 服务已启动${NC}"
