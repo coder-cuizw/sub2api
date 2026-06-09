@@ -6285,25 +6285,28 @@ func (s *GatewayService) buildUpstreamRequest(ctx context.Context, c *gin.Contex
 	}
 	if account.IsOAuth() && s.identityService != nil {
 		// 1. 获取或创建指纹（包含随机生成的ClientID）
+		// 指纹获取失败会导致后续链路中断（无法同步cc_version、无法重写metadata、无法应用header）
+		// 因此对OAuth账号必须硬性要求，不允许降级
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
 		if err != nil {
-			logger.LegacyPrintf("service.gateway", "Warning: failed to get fingerprint for account %d: %v", account.ID, err)
-			// 失败时降级为透传原始headers
-		} else {
-			if enableFP {
-				fingerprint = fp
-			}
+			return nil, nil, fmt.Errorf("critical: fingerprint required for OAuth account %d (TLS JA3 exposure risk): %w", account.ID, err)
+		}
 
-			// 2. 重写metadata.user_id（需要指纹中的ClientID和账号的account_uuid）
-			// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-			// 当 metadata 透传开启时跳过重写
-			if !enableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
-						body = newBody
-					}
-				}
+		if enableFP {
+			fingerprint = fp
+		}
+
+		// 2. 重写metadata.user_id（需要指纹中的ClientID和账号的account_uuid）
+		// OAuth账号必须强制重写metadata.user_id以确保设备标识一致性，防止账号关联检测
+		// 即使enableMPT=true，对OAuth也应该无条件应用重写（除非显式配置允许透传，需特别谨慎）
+		accountUUID := account.GetExtraString("account_uuid")
+		if accountUUID != "" && fp.ClientID != "" {
+			// 对OAuth账号无条件重写，确保device_id稳定
+			if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				body = newBody
+			} else if err != nil {
+				logger.LegacyPrintf("service.gateway", "Warning: failed to rewrite metadata.user_id for OAuth account %d: %v", account.ID, err)
+				// 重写失败时继续（可能body格式不支持，但不应该中断整个请求）
 			}
 		}
 	}
@@ -9767,23 +9770,26 @@ func (s *GatewayService) buildCountTokensRequest(ctx context.Context, c *gin.Con
 	}
 
 	// OAuth 账号：应用统一指纹和重写 userID（受设置开关控制）
-	// 如果启用了会话ID伪装，会在重写后替换 session 部分为固定值
-	ctEnableFP, ctEnableMPT, ctEnableCCH := true, false, false
+	ctEnableFP, _, ctEnableCCH := true, false, false
 	if s.settingService != nil {
-		ctEnableFP, ctEnableMPT, ctEnableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
+		ctEnableFP, _, ctEnableCCH = s.settingService.GetGatewayForwardingSettings(ctx)
 	}
 	var ctFingerprint *Fingerprint
 	if account.IsOAuth() && s.identityService != nil {
+		// 指纹获取失败也应该硬性要求（与 buildUpstreamRequest 路径一致）
 		fp, err := s.identityService.GetOrCreateFingerprint(ctx, account.ID, clientHeaders)
-		if err == nil {
-			ctFingerprint = fp
-			if !ctEnableMPT {
-				accountUUID := account.GetExtraString("account_uuid")
-				if accountUUID != "" && fp.ClientID != "" {
-					if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
-						body = newBody
-					}
-				}
+		if err != nil {
+			return nil, nil, fmt.Errorf("critical: fingerprint required for OAuth account %d (count_tokens path): %w", account.ID, err)
+		}
+		ctFingerprint = fp
+
+		// OAuth 账号必须强制重写 metadata.user_id（无条件，与主路径一致）
+		accountUUID := account.GetExtraString("account_uuid")
+		if accountUUID != "" && fp.ClientID != "" {
+			if newBody, err := s.identityService.RewriteUserIDWithMasking(ctx, body, account, accountUUID, fp.ClientID, fp.UserAgent); err == nil && len(newBody) > 0 {
+				body = newBody
+			} else if err != nil {
+				logger.LegacyPrintf("service.gateway", "Warning: failed to rewrite metadata.user_id for OAuth account %d (count_tokens): %v", account.ID, err)
 			}
 		}
 	}

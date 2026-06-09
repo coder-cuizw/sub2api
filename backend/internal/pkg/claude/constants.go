@@ -97,9 +97,9 @@ var DefaultHeaders = map[string]string{
 	"X-Stainless-Lang":                          "js",
 	"X-Stainless-Package-Version":               "0.94.0",
 	"X-Stainless-OS":                            "Linux",
-	"X-Stainless-Arch":                          "arm64",
+	"X-Stainless-Arch":                          "x64",  // 容器环境是 Linux x64，不是 arm64
 	"X-Stainless-Runtime":                       "node",
-	"X-Stainless-Runtime-Version":               "v24.3.0",
+	"X-Stainless-Runtime-Version":               "v22.22.2",  // 必须与环境 Node.js 版本一致，否则 TLS 握手指纹暴露
 	"X-Stainless-Retry-Count":                   "0",
 	"X-Stainless-Timeout":                       "600",
 	"X-App":                                     "cli",

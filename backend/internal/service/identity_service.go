@@ -26,14 +26,15 @@ var (
 )
 
 // 默认指纹值（当客户端未提供时使用）
+// 必须与环境的真实 Node.js 版本和架构对齐，否则 TLS 握手指纹会暴露
 var defaultFingerprint = Fingerprint{
 	UserAgent:               "claude-cli/" + claude.CLICurrentVersion + " (external, cli)",
 	StainlessLang:           "js",
 	StainlessPackageVersion: "0.94.0",
 	StainlessOS:             "Linux",
-	StainlessArch:           "arm64",
+	StainlessArch:           "x64",  // 环境架构：Linux x64
 	StainlessRuntime:        "node",
-	StainlessRuntimeVersion: "v24.3.0",
+	StainlessRuntimeVersion: "v22.22.2",  // 环境 Node.js 版本，必须与 claude/constants.go 一致
 }
 
 // Fingerprint represents account fingerprint data
