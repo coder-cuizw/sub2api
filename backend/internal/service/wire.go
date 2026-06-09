@@ -255,6 +255,21 @@ func ProvideRateLimitService(
 	return svc
 }
 
+// ProvideTrafficModulationService 创建用户行为随机化服务
+// 用于模拟真实用户的活跃模式，避免 24/7 机器化操作被识别
+func ProvideTrafficModulationService(cfg *config.Config) (*TrafficModulationService, error) {
+	// 使用默认的时间窗口配置
+	timeWindows := DefaultTrafficModulationWindows()
+
+	// 从配置中读取时区，默认为空（使用 UTC）
+	tzName := ""
+	if cfg != nil && cfg.Timezone != "" {
+		tzName = cfg.Timezone
+	}
+
+	return NewTrafficModulationService(timeWindows, tzName)
+}
+
 // ProvideOpsMetricsCollector creates and starts OpsMetricsCollector.
 func ProvideOpsMetricsCollector(
 	opsRepo OpsRepository,
@@ -538,6 +553,7 @@ var ProviderSet = wire.NewSet(
 	ProvideClaudeTokenProvider,
 	NewAntigravityGatewayService,
 	ProvideRateLimitService,
+	ProvideTrafficModulationService,
 	NewAccountUsageService,
 	NewAccountTestService,
 	ProvideSettingService,
