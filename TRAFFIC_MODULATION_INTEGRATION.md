@@ -4,6 +4,8 @@
 
 `TrafficModulationService` 提供基于时间的请求速率调制，用于模拟真实用户行为模式。
 
+**默认状态**：禁用（disabled by default）- 系统满速运行，无任何调制。
+
 ## 服务特性
 
 ### 默认时间窗口（UTC 时区）
@@ -18,13 +20,30 @@
 
 ### 配置
 
-时间窗口配置在 `internal/service/traffic_modulation_service.go` 中，可以通过修改 `DefaultTrafficModulationWindows()` 函数调整。
+#### 启用/禁用
 
-时区配置来自 `config.yaml` 中的 `timezone` 字段：
+在 `config.yaml` 中添加或修改 `traffic_modulation` 配置：
 
 ```yaml
-timezone: "America/New_York"  # 支持任何有效的 IANA 时区
+# 禁用流量调制（默认）
+traffic_modulation:
+  enabled: false
+
+# 启用流量调制
+traffic_modulation:
+  enabled: true
+  timezone: "America/New_York"  # 可选，指定时区
 ```
+
+#### 时区配置
+
+- 如果 `traffic_modulation.timezone` 未指定，将使用全局 `timezone` 配置
+- 支持任何有效的 IANA 时区（如 `America/New_York`, `Asia/Shanghai`, `Europe/London`）
+- 空值时默认使用 UTC
+
+#### 时间窗口调整
+
+时间窗口配置在 `internal/service/traffic_modulation_service.go` 的 `DefaultTrafficModulationWindows()` 函数中，可修改以调整调制模式。
 
 ## 使用方式
 
@@ -110,11 +129,18 @@ if currentRequestCount > actualRPM {
 
 ## 监控和日志
 
+### 启用状态检查
+
+当流量调制被禁用时，服务将：
+- 始终返回调制因子 1.0（无调制）
+- 不进行任何时间窗口计算
+- 零开销，不影响性能
+
 ### 推荐的监控指标
 
-1. **调制因子变化**：记录时间窗口变化
-2. **实际并发 vs 基础并发**：追踪调制效果
-3. **请求分布**：验证是否符合预期的活跃模式
+1. **调制因子变化**：记录时间窗口变化（仅在启用时有意义）
+2. **实际并发 vs 基础并发**：追踪调制效果（仅在启用时变化）
+3. **请求分布**：验证是否符合预期的活跃模式（仅在启用时有用）
 
 ### 日志示例
 
