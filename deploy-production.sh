@@ -77,8 +77,8 @@ create_env_file() {
     POSTGRES_PASSWORD=$(generate_password 32)
     REDIS_PASSWORD=$(generate_password 32)
     ADMIN_PASSWORD=$(generate_password 16)
-    JWT_SECRET=$(generate_hex_key 32)
-    TOTP_ENCRYPTION_KEY=$(generate_hex_key 32)
+    JWT_SECRET=$(generate_hex_key 64)
+    TOTP_ENCRYPTION_KEY=$(generate_hex_key 64)
 
     # 创建 .env 文件
     cat > "$ENV_FILE" << EOF
