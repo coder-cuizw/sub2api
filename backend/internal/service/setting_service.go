@@ -2285,7 +2285,7 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 			gatewayForwardingCache.Store(&cachedGatewayForwardingSettings{
 				fingerprintUnification:       true,
 				metadataPassthrough:          false,
-				cchSigning:                   true,  // 默认启用 CCH 签名（防封关键）
+				cchSigning:                   false,
 				anthropicCacheTTL1hInjection: false,
 				rewriteMessageCacheControl:   s.defaultRewriteMessageCacheControl(),
 				expiresAt:                    time.Now().Add(gatewayForwardingErrorTTL).UnixNano(),
@@ -2297,8 +2297,7 @@ func (s *SettingService) getGatewayForwardingSettingsCached(ctx context.Context)
 			fp = v == "true"
 		}
 		mp := values[SettingKeyEnableMetadataPassthrough] == "true"
-		// CCH 签名默认启用（除非显式设置为 "false"），确保 cch 值不是静态占位符
-		cch := values[SettingKeyEnableCCHSigning] != "false"
+		cch := values[SettingKeyEnableCCHSigning] == "true"
 		cacheTTL1h := values[SettingKeyEnableAnthropicCacheTTL1hInjection] == "true"
 		rewriteMessageCacheControl := s.defaultRewriteMessageCacheControl()
 		if v, ok := values[SettingKeyRewriteMessageCacheControl]; ok && v != "" {
