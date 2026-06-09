@@ -7,6 +7,7 @@ import (
 // TrafficModulationService 管理基于活跃时间段的请求速率调制
 // 用于模拟真实用户的行为模式，防止 24/7 机器化操作被识别
 type TrafficModulationService struct {
+	enabled     bool              // 是否启用流量调制
 	timeWindows []TimeWindow
 	timezone    *time.Location
 }
@@ -57,7 +58,7 @@ func DefaultTrafficModulationWindows() []TimeWindow {
 }
 
 // NewTrafficModulationService 创建新的流量调制服务
-func NewTrafficModulationService(timeWindows []TimeWindow, tzName string) (*TrafficModulationService, error) {
+func NewTrafficModulationService(enabled bool, timeWindows []TimeWindow, tzName string) (*TrafficModulationService, error) {
 	if len(timeWindows) == 0 {
 		timeWindows = DefaultTrafficModulationWindows()
 	}
@@ -74,6 +75,7 @@ func NewTrafficModulationService(timeWindows []TimeWindow, tzName string) (*Traf
 	}
 
 	return &TrafficModulationService{
+		enabled:     enabled,
 		timeWindows: timeWindows,
 		timezone:    tz,
 	}, nil
@@ -81,8 +83,9 @@ func NewTrafficModulationService(timeWindows []TimeWindow, tzName string) (*Traf
 
 // GetModulationFactor 获取当前时刻的速率调制因子
 // 返回值在 0.0-1.0 之间，其中 1.0 表示满速（无限制）
+// 如果流量调制被禁用，始终返回 1.0
 func (s *TrafficModulationService) GetModulationFactor() float64 {
-	if s == nil || len(s.timeWindows) == 0 {
+	if s == nil || !s.enabled || len(s.timeWindows) == 0 {
 		return 1.0 // 默认满速
 	}
 
@@ -101,8 +104,9 @@ func (s *TrafficModulationService) GetModulationFactor() float64 {
 
 // GetModulationFactorForTime 获取指定时刻的速率调制因子
 // 用于测试或特殊场景
+// 如果流量调制被禁用，始终返回 1.0
 func (s *TrafficModulationService) GetModulationFactorForTime(t time.Time) float64 {
-	if s == nil || len(s.timeWindows) == 0 {
+	if s == nil || !s.enabled || len(s.timeWindows) == 0 {
 		return 1.0
 	}
 
