@@ -69,8 +69,7 @@ create_env_file() {
     echo -e "${BLUE}生成环境变量文件...${NC}"
 
     if [ -f "$ENV_FILE" ]; then
-        echo -e "${YELLOW}⚠ $ENV_FILE 已存在，跳过创建${NC}"
-        echo -e "${YELLOW}如需重新生成，请删除 .env 文件后重试${NC}"
+        echo -e "${YELLOW}⚠ $ENV_FILE 已存在，使用现有配置${NC}"
         return
     fi
 
