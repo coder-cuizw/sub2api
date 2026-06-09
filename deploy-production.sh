@@ -92,8 +92,7 @@ create_env_file() {
 # Docker Image Configuration
 # =============================================================================
 # SUB2API_IMAGE: Sub2API application image
-# 默认使用私有镜像仓库: 46.38.157.108:80/sub2api:latest
-# 可修改为其他版本: 46.38.157.108:80/sub2api:v0.1.135-{commit}
+# 镜像从源代码自动构建，无需手动拉取
 SUB2API_IMAGE=46.38.157.108:80/sub2api:latest
 
 # =============================================================================
@@ -204,6 +203,41 @@ EOF
     echo ""
 }
 
+# 构建 Docker 镜像
+build_docker_image() {
+    echo -e "${BLUE}从源代码构建 Docker 镜像...${NC}"
+    echo ""
+
+    cd "$SCRIPT_DIR"
+
+    # 获取版本号和提交哈希
+    VERSION=$(cat backend/cmd/server/VERSION | tr -d '\n' 2>/dev/null || echo "latest")
+    COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
+    IMAGE_TAG="46.38.157.108:80/sub2api:v${VERSION}-${COMMIT}"
+    IMAGE_LATEST="46.38.157.108:80/sub2api:latest"
+
+    echo -e "${YELLOW}镜像标签:${NC}"
+    echo -e "  版本: ${IMAGE_TAG}"
+    echo -e "  最新: ${IMAGE_LATEST}"
+    echo ""
+
+    echo -e "${BLUE}执行 docker build...${NC}"
+    if docker build \
+        -t "$IMAGE_TAG" \
+        -t "$IMAGE_LATEST" \
+        -f Dockerfile \
+        . ; then
+        echo -e "${GREEN}✓ 镜像构建成功${NC}"
+        echo -e "  ${IMAGE_TAG}"
+        echo -e "  ${IMAGE_LATEST}"
+        echo ""
+        return 0
+    else
+        echo -e "${RED}❌ 镜像构建失败${NC}"
+        exit 1
+    fi
+}
+
 # 启动 Docker Compose
 start_docker_compose() {
     echo -e "${BLUE}启动 Docker Compose 服务...${NC}"
@@ -292,6 +326,8 @@ EOF
 
     # 执行各个阶段
     check_dependencies
+    echo ""
+    build_docker_image
     echo ""
     create_env_file
     echo ""
