@@ -52,6 +52,26 @@ check_dependencies() {
     echo -e "${GREEN}✓ 所有依赖已安装${NC}"
 }
 
+# 清理旧镜像和容器
+cleanup_old_images() {
+    echo -e "${BLUE}清理旧镜像和容器...${NC}"
+
+    cd "$DEPLOY_DIR"
+
+    # 停止运行中的容器
+    if docker-compose ps 2>/dev/null | grep -q "sub2api"; then
+        echo -e "${YELLOW}停止现有容器...${NC}"
+        docker-compose down || true
+    fi
+
+    # 删除旧镜像
+    echo -e "${YELLOW}删除旧镜像...${NC}"
+    docker rmi sub2api:latest 2>/dev/null || true
+    docker rmi $(docker images -q 'sub2api:v*' 2>/dev/null) 2>/dev/null || true
+
+    echo -e "${GREEN}✓ 清理完成${NC}"
+}
+
 # 生成随机密码
 generate_password() {
     local length=${1:-32}
@@ -222,6 +242,7 @@ build_docker_image() {
 
     echo -e "${BLUE}从源代码构建本地镜像...${NC}"
     if docker build \
+        --no-cache \
         -t "$IMAGE_TAG" \
         -t "$IMAGE_LATEST" \
         -f Dockerfile \
@@ -325,6 +346,8 @@ EOF
 
     # 执行各个阶段
     check_dependencies
+    echo ""
+    cleanup_old_images
     echo ""
     build_docker_image
     echo ""
