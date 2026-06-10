@@ -1090,46 +1090,51 @@ func buildUpstreamTransport(settings poolSettings, proxyURL *url.URL, protocolMo
 //   - nil/空: 直连，使用 TLSFingerprintDialer
 //   - http/https: HTTP 代理，使用 HTTPProxyDialer（CONNECT 隧道 + utls 握手）
 //   - socks5: SOCKS5 代理，使用 SOCKS5ProxyDialer（SOCKS5 隧道 + utls 握手）
-func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (*http.Transport, error) {
-	transport := &http.Transport{
-		MaxIdleConns:          settings.maxIdleConns,
-		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
-		MaxConnsPerHost:       settings.maxConnsPerHost,
-		IdleConnTimeout:       settings.idleConnTimeout,
-		ResponseHeaderTimeout: settings.responseHeaderTimeout,
-		// 禁用默认的 TLS，我们使用自定义的 DialTLSContext
-		ForceAttemptHTTP2: false,
-	}
-
-	// 根据代理类型选择合适的 TLS 指纹 Dialer
+func buildUpstreamTransportWithTLSFingerprint(settings poolSettings, proxyURL *url.URL, profile *tlsfingerprint.Profile) (http.RoundTripper, error) {
+	// 选择合适的 TLS 指纹 Dialer（直连 / SOCKS5 / HTTP CONNECT 隧道）。
+	var dialTLS tlsfingerprint.DialTLSFunc
 	if proxyURL == nil {
 		// 直连：使用 TLSFingerprintDialer
 		slog.Debug("tls_fingerprint_transport_direct")
-		dialer := tlsfingerprint.NewDialer(profile, nil)
-		transport.DialTLSContext = dialer.DialTLSContext
+		dialTLS = tlsfingerprint.NewDialer(profile, nil).DialTLSContext
 	} else {
 		scheme := strings.ToLower(proxyURL.Scheme)
 		switch scheme {
 		case "socks5", "socks5h":
 			// SOCKS5 代理：使用 SOCKS5ProxyDialer
 			slog.Debug("tls_fingerprint_transport_socks5", "proxy", proxyURL.Host)
-			socks5Dialer := tlsfingerprint.NewSOCKS5ProxyDialer(profile, proxyURL)
-			transport.DialTLSContext = socks5Dialer.DialTLSContext
+			dialTLS = tlsfingerprint.NewSOCKS5ProxyDialer(profile, proxyURL).DialTLSContext
 		case "http", "https":
 			// HTTP/HTTPS 代理：使用 HTTPProxyDialer（CONNECT 隧道）
 			slog.Debug("tls_fingerprint_transport_http_connect", "proxy", proxyURL.Host)
-			httpDialer := tlsfingerprint.NewHTTPProxyDialer(profile, proxyURL)
-			transport.DialTLSContext = httpDialer.DialTLSContext
+			dialTLS = tlsfingerprint.NewHTTPProxyDialer(profile, proxyURL).DialTLSContext
 		default:
-			// 未知代理类型，回退到普通代理配置（无 TLS 指纹）
+			// 未知代理类型，回退到普通代理配置（无 TLS 指纹、标准库字母序 header）
 			slog.Debug("tls_fingerprint_transport_unknown_scheme_fallback", "scheme", scheme)
+			transport := &http.Transport{
+				MaxIdleConns:          settings.maxIdleConns,
+				MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
+				MaxConnsPerHost:       settings.maxConnsPerHost,
+				IdleConnTimeout:       settings.idleConnTimeout,
+				ResponseHeaderTimeout: settings.responseHeaderTimeout,
+				ForceAttemptHTTP2:     false,
+			}
 			if err := proxyutil.ConfigureTransportProxy(transport, proxyURL); err != nil {
 				return nil, err
 			}
+			return transport, nil
 		}
 	}
 
-	return transport, nil
+	// 使用保序 RoundTripper：按真实 Claude CLI 的 header 顺序（headerWireOrder）写 HTTP/1.1
+	// 请求，而非 Go 标准库的字母序，使上游 JA4H/HTTP 指纹与官方客户端一致。
+	return tlsfingerprint.NewRoundTripper(tlsfingerprint.RoundTripperConfig{
+		DialTLS:               dialTLS,
+		HeaderOrder:           service.HeaderWireOrder(),
+		MaxIdleConnsPerHost:   settings.maxIdleConnsPerHost,
+		IdleConnTimeout:       settings.idleConnTimeout,
+		ResponseHeaderTimeout: settings.responseHeaderTimeout,
+	}), nil
 }
 
 // trackedBody 带跟踪功能的响应体包装器

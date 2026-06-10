@@ -127,9 +127,11 @@ func (s *HTTPUpstreamSuite) TestOpenAIProfileTLSFingerprintDoesNotInheritGeneric
 	svc := s.newService()
 	entry, err := svc.getClientEntryWithTLS("", 1, 1, &tlsfingerprint.Profile{Name: "test"}, service.HTTPUpstreamProfileOpenAI, false, false)
 	require.NoError(s.T(), err)
-	transport, ok := entry.client.Transport.(*http.Transport)
-	require.True(s.T(), ok, "expected *http.Transport")
-	require.Equal(s.T(), time.Duration(0), transport.ResponseHeaderTimeout, "OpenAI TLS path should not inherit generic header timeout")
+	// The TLS-fingerprint path uses the order-preserving RoundTripper, not a
+	// plain *http.Transport.
+	rt, ok := entry.client.Transport.(*tlsfingerprint.RoundTripper)
+	require.True(s.T(), ok, "expected *tlsfingerprint.RoundTripper")
+	require.Equal(s.T(), time.Duration(0), rt.ResponseHeaderTimeout(), "OpenAI TLS path should not inherit generic header timeout")
 }
 
 func (s *HTTPUpstreamSuite) TestOpenAIProfileHTTP2DisabledUsesHTTP1Transport() {

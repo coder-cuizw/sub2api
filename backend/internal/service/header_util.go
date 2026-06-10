@@ -71,6 +71,13 @@ var headerWireOrder = []string{
 	"x-stainless-helper-method",
 }
 
+// HeaderWireOrder 返回真实 Claude CLI 发送 header 的顺序（副本，调用方可安全修改）。
+// 供 TLS 指纹转发链路的保序 RoundTripper 使用，使上游收到的 HTTP/1.1 header 顺序
+// 与官方客户端一致，而不是 Go 标准库的字母序。
+func HeaderWireOrder() []string {
+	return append([]string(nil), headerWireOrder...)
+}
+
 // headerWireOrderSet 用于快速判断某个 key 是否在 headerWireOrder 中（按 lowercase 匹配）。
 var headerWireOrderSet map[string]struct{}
 
